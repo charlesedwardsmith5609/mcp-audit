@@ -12,8 +12,10 @@ An unpinned `npx` or `uvx` package can change on the next launch. A shell comman
 
 ## Needs verification
 
-Product-specific deny-list keys besides `deny`, `disabledTools`, and `alwaysDeny` are not detected. A Cursor or Claude build that uses a different key will look like it has no deny list. Confirm the key in the settings file you actually use before treating a clean report as a complete allow/deny review.
+Product-specific deny-list keys other than the ones listed in the README are not detected. A Cursor or Claude build that uses a different key will look like it has no deny list. Confirm the key in the settings file you actually use before treating a clean report as a complete allow/deny review.
+
+A file with a shape this tool does not know is reported as `MCP-UNKNOWN-SHAPE` (high, exit 1), never as clean. A new product layout therefore fails loudly until support is added.
 
 ## Failure
 
-Symlinks, files over 1 MiB, and invalid JSON exit 2.
+Exit 2: invalid JSON, duplicate keys, nesting deeper than 64, malformed `args` or `env`, files over 1 MiB, non-regular files, unreadable files, and a symlinked config file. A symlinked parent directory is followed. Reads are bounded and never block on a FIFO or device.

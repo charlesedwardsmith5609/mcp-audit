@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -52,7 +53,7 @@ func ReadFile(path string) (File, error) {
 	f, err := os.OpenFile(path, openFlags, 0)
 	if err != nil {
 		if isSymlinkErr(err) {
-			return File{}, fmt.Errorf("%s is a symlink", path)
+			return File{}, fmt.Errorf("%q is a symlink", path)
 		}
 		return File{}, err
 	}
@@ -62,14 +63,14 @@ func ReadFile(path string) (File, error) {
 		return File{}, err
 	}
 	if !info.Mode().IsRegular() {
-		return File{}, fmt.Errorf("%s is not a regular file", path)
+		return File{}, fmt.Errorf("%q is not a regular file", path)
 	}
 	data, err := io.ReadAll(io.LimitReader(f, MaxBytes+1))
 	if err != nil {
 		return File{}, err
 	}
 	if len(data) > MaxBytes {
-		return File{}, fmt.Errorf("%s is larger than %d bytes", path, MaxBytes)
+		return File{}, fmt.Errorf("%q is larger than %d bytes", path, MaxBytes)
 	}
 	return Parse(path, data)
 }
@@ -80,7 +81,7 @@ func ReadFile(path string) (File, error) {
 func Parse(path string, data []byte) (File, error) {
 	tree, err := decode(data)
 	if err != nil {
-		return File{}, fmt.Errorf("%s: %w", path, err)
+		return File{}, fmt.Errorf("%q: %w", path, err)
 	}
 	out := File{Path: path, SecretAt: walkSecrets("$", tree)}
 	root, ok := tree.(map[string]any)
@@ -94,7 +95,7 @@ func Parse(path string, data []byte) (File, error) {
 		if raw, ok := root[key]; ok {
 			found = true
 			if err := out.addServers("$."+key, raw); err != nil {
-				return File{}, fmt.Errorf("%s: %w", path, err)
+				return File{}, fmt.Errorf("%q: %w", path, err)
 			}
 		}
 	}
@@ -112,7 +113,7 @@ func Parse(path string, data []byte) (File, error) {
 			if rawServers, ok := project["mcpServers"]; ok {
 				found = true
 				if err := out.addServers(childPath("$.projects", name)+".mcpServers", rawServers); err != nil {
-					return File{}, fmt.Errorf("%s: %w", path, err)
+					return File{}, fmt.Errorf("%q: %w", path, err)
 				}
 			}
 		}
@@ -120,6 +121,8 @@ func Parse(path string, data []byte) (File, error) {
 	if !found {
 		out.markUnknown("no recognized server list (mcpServers, servers, context_servers, projects.*.mcpServers)")
 	}
+	sort.Slice(out.Servers, func(i, j int) bool { return out.Servers[i].Origin < out.Servers[j].Origin })
+	sort.Slice(out.SecretAt, func(i, j int) bool { return out.SecretAt[i].Path < out.SecretAt[j].Path })
 	return out, nil
 }
 

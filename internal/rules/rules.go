@@ -2,6 +2,8 @@
 package rules
 
 import (
+	"sort"
+
 	"mcp-audit/internal/config"
 )
 
@@ -16,7 +18,24 @@ type Finding struct {
 	Detail   string `json:"detail,omitempty"`
 }
 
-// Evaluate returns findings for one file.
+// Sort orders findings by file, server, id and location so output is identical between runs.
+func Sort(findings []Finding) {
+	sort.SliceStable(findings, func(i, j int) bool {
+		a, b := findings[i], findings[j]
+		if a.File != b.File {
+			return a.File < b.File
+		}
+		if a.Server != b.Server {
+			return a.Server < b.Server
+		}
+		if a.ID != b.ID {
+			return a.ID < b.ID
+		}
+		return a.Location < b.Location
+	})
+}
+
+// Evaluate returns findings for one file, sorted.
 func Evaluate(file config.File) []Finding {
 	var out []Finding
 	if file.Unknown {
@@ -41,6 +60,7 @@ func Evaluate(file config.File) []Finding {
 	for _, server := range file.Servers {
 		out = append(out, serverFindings(file.Path, server)...)
 	}
+	Sort(out)
 	return out
 }
 

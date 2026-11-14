@@ -265,3 +265,99 @@ func TestCLIControlCharsInNamesAreEscaped(t *testing.T) {
 		t.Fatalf("forged output: %q", out)
 	}
 }
+
+func TestCLIOutputIsDeterministic(t *testing.T) {
+	var servers []string
+	for _, name := range []string{"zeta", "alpha", "mid", "beta", "omega", "gamma", "delta", "kappa"} {
+		servers = append(servers, `"`+name+`":{"command":"bash","env":{"API_TOKEN":"v-`+name+`","DB_PASSWORD":"p-`+name+`"}}`)
+	}
+	path := writeConfig(t, `{"mcpServers":{`+strings.Join(servers, ",")+`}}`)
+	for _, format := range []string{"text", "json"} {
+		first, _, code := runCLI(t, "--format", format, path)
+		if code != 1 || first == "" {
+			t.Fatalf("exit %d, output %q", code, first)
+		}
+		for i := 0; i < 20; i++ {
+			again, _, _ := runCLI(t, "--format", format, path)
+			if again != first {
+				t.Fatalf("%s output differs between runs:\n%s\n---\n%s", format, first, again)
+			}
+		}
+	}
+}
+
+func TestCLIFlagAfterFileIsUsageError(t *testing.T) {
+	good := fixture("pass.json")
+	out, errOut, code := runCLI(t, good, "--format", "json")
+	if code != 2 {
+		t.Fatalf("exit %d, want 2", code)
+	}
+	if !strings.Contains(errOut, "usage") {
+		t.Fatalf("stderr should explain usage: %q", errOut)
+	}
+	if strings.Contains(errOut, "read --format") || strings.Contains(errOut, "no such file") {
+		t.Fatalf("flag was read as a file: %q", errOut)
+	}
+	if out != "" {
+		t.Fatalf("nothing should be audited on a usage error: %q", out)
+	}
+}
+
+func TestCLIUnreadableFileDoesNotStopTheRun(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.json")
+	bad := writeConfig(t, `{"mcpServers":{"s":{"command":"bash"}}}`)
+	out, errOut, code := runCLI(t, "--format", "text", missing, bad)
+	if code != 2 {
+		t.Fatalf("exit %d, want 2", code)
+	}
+	if !strings.Contains(errOut, "missing.json") {
+		t.Fatalf("stderr should name the unreadable file: %q", errOut)
+	}
+	if !strings.Contains(out, "MCP-SHELL") {
+		t.Fatalf("second file was not audited: %q", out)
+	}
+}
+
+func TestCLIExitCodes(t *testing.T) {
+	medium := writeConfig(t, `{"mcpServers":{"s":{"command":"node","args":["s.js"]}}}`) // only MCP-NO-DENY (medium)
+	rows := []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"clean", []string{fixture("pass.json")}, 0},
+		{"finding", []string{fixture("http-shell.json")}, 1},
+		{"bad json", []string{writeConfig(t, `{`)}, 2},
+		{"missing file", []string{filepath.Join(t.TempDir(), "nope.json")}, 2},
+		{"no files", nil, 2},
+		{"medium at default fail-on", []string{medium}, 1},
+		{"medium with fail-on medium", []string{"--fail-on", "medium", medium}, 1},
+		{"medium with fail-on high", []string{"--fail-on", "high", medium}, 0},
+		{"bad fail-on", []string{"--fail-on", "nope", medium}, 2},
+		{"bad format", []string{"--format", "xml", fixture("pass.json")}, 2},
+	}
+	for _, row := range rows {
+		if _, _, code := runCLI(t, row.args...); code != row.want {
+			t.Errorf("%s: exit %d, want %d", row.name, code, row.want)
+		}
+	}
+}
+
+func TestREADMEMatchesBehavior(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme := string(body)
+	for _, want := range []string{
+		"symlinked parent directory", "1 MiB", "MCP-UNKNOWN-SHAPE", "context_servers", "projects",
+		"disabledTools", "deniedTools", "mcp__", "per server",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Errorf("README does not mention %q", want)
+		}
+	}
+	if strings.Contains(readme, "Symlinks and files over 1 MiB are refused") {
+		t.Error("README keeps the old, inaccurate symlink sentence")
+	}
+}
