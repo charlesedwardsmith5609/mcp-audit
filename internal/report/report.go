@@ -38,12 +38,14 @@ func Text(w io.Writer, findings []rules.Finding) error {
 		return err
 	}
 	for _, finding := range findings {
-		line := fmt.Sprintf("%s %s %s", finding.Severity, finding.ID, finding.File)
+		// File, server and location come from untrusted input: quote them so control
+		// characters cannot forge lines or move the cursor.
+		line := fmt.Sprintf("%s %s %q", finding.Severity, finding.ID, finding.File)
 		if finding.Server != "" {
-			line += " server " + finding.Server
+			line += fmt.Sprintf(" server %q", finding.Server)
 		}
 		if finding.Location != "" {
-			line += " at " + finding.Location
+			line += fmt.Sprintf(" at %q", finding.Location)
 		}
 		if finding.Detail != "" {
 			line += " " + finding.Detail

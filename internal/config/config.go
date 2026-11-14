@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
+	"strings"
 )
 
 const MaxBytes = 1 << 20
@@ -20,19 +20,22 @@ type Server struct {
 	Command string
 	Args    []string
 	Env     map[string]string
-	URL     string
+	URL     string   // the "url" field
+	URLs    []string // url, serverUrl and httpUrl fields, in that order, when present
+	HasDeny bool     // this server has a non-empty deny list (D6)
 }
 
 // File is one config file.
 type File struct {
 	Path     string
 	Servers  []Server
-	HasDeny  bool
 	SecretAt []SecretSite
 	// Unknown is set when the file has no recognized server list or a recognized list has the
 	// wrong type. Reason is a fixed string and never echoes file content.
 	Unknown bool
 	Reason  string
+
+	denyEntries []string // top-level permissions.deny strings
 }
 
 // SecretSite is a location whose value must not be printed.
@@ -85,12 +88,14 @@ func Parse(path string, data []byte) (File, error) {
 		out.markUnknown("top-level value is not an object")
 		return out, nil
 	}
-	out.HasDeny = hasDeny(root)
+	out.denyEntries = permissionsDeny(root)
 	found := false
 	for _, key := range []string{"mcpServers", "servers", "context_servers"} {
 		if raw, ok := root[key]; ok {
 			found = true
-			out.addServers("$."+key, raw)
+			if err := out.addServers("$."+key, raw); err != nil {
+				return File{}, fmt.Errorf("%s: %w", path, err)
+			}
 		}
 	}
 	if raw, ok := root["projects"]; ok {
@@ -106,7 +111,9 @@ func Parse(path string, data []byte) (File, error) {
 			}
 			if rawServers, ok := project["mcpServers"]; ok {
 				found = true
-				out.addServers("$.projects["+strconv.Quote(name)+"].mcpServers", rawServers)
+				if err := out.addServers(childPath("$.projects", name)+".mcpServers", rawServers); err != nil {
+					return File{}, fmt.Errorf("%s: %w", path, err)
+				}
 			}
 		}
 	}
@@ -122,11 +129,11 @@ func (f *File) markUnknown(reason string) {
 	}
 }
 
-func (f *File) addServers(origin string, raw any) {
+func (f *File) addServers(origin string, raw any) error {
 	servers, ok := raw.(map[string]any)
 	if !ok {
 		f.markUnknown("a server list is not an object")
-		return
+		return nil
 	}
 	for name, rawServer := range servers {
 		fields, ok := rawServer.(map[string]any)
@@ -134,28 +141,69 @@ func (f *File) addServers(origin string, raw any) {
 			f.markUnknown("a server entry is not an object")
 			continue
 		}
-		server := Server{Name: name, Origin: origin + "." + name, Env: map[string]string{}}
-		server.Command, _ = fields["command"].(string)
-		server.URL, _ = fields["url"].(string)
-		if args, ok := fields["args"].([]any); ok {
-			for _, arg := range args {
-				if s, ok := arg.(string); ok {
-					server.Args = append(server.Args, s)
+		server := Server{Name: name, Origin: childPath(origin, name), Env: map[string]string{}}
+		fail := func(format string, a ...any) error {
+			return fmt.Errorf("server %q: %s", Redact(name), fmt.Sprintf(format, a...))
+		}
+		var err error
+		if server.Command, err = optString(fields, "command"); err != nil {
+			return fail("%v", err)
+		}
+		for _, key := range []string{"url", "serverUrl", "httpUrl"} {
+			value, err := optString(fields, key)
+			if err != nil {
+				return fail("%v", err)
+			}
+			if value == "" {
+				continue
+			}
+			if key == "url" {
+				server.URL = value
+			}
+			server.URLs = append(server.URLs, value)
+		}
+		if raw, ok := fields["args"]; ok {
+			list, ok := raw.([]any)
+			if !ok {
+				return fail("args must be an array of strings")
+			}
+			for _, item := range list {
+				arg, ok := item.(string)
+				if !ok {
+					return fail("args must be an array of strings")
 				}
+				server.Args = append(server.Args, arg)
 			}
 		}
-		if env, ok := fields["env"].(map[string]any); ok {
+		if raw, ok := fields["env"]; ok {
+			env, ok := raw.(map[string]any)
+			if !ok {
+				return fail("env must be an object of strings")
+			}
 			for key, value := range env {
-				if s, ok := value.(string); ok {
-					server.Env[key] = s
+				text, ok := value.(string)
+				if !ok {
+					return fail("env values must be strings")
 				}
+				server.Env[key] = text
 			}
 		}
-		if hasDeny(fields) {
-			f.HasDeny = true
-		}
+		server.HasDeny = serverDeny(fields) || denied(f.denyEntries, name)
 		f.Servers = append(f.Servers, server)
 	}
+	return nil
+}
+
+func optString(fields map[string]any, key string) (string, error) {
+	raw, ok := fields[key]
+	if !ok {
+		return "", nil
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("%s must be a string", key)
+	}
+	return text, nil
 }
 
 // decode parses one JSON value with json.Decoder.Token so nesting depth and duplicate keys are
@@ -222,14 +270,35 @@ func decodeValue(dec *json.Decoder, depth int) (any, error) {
 	}
 }
 
-func hasDeny(obj map[string]any) bool {
-	for _, key := range []string{"deny", "disabledTools", "alwaysDeny"} {
-		if _, ok := obj[key]; ok {
+// serverDeny reports a non-empty deny array on the server itself. Empty, null and wrong-typed
+// values do not count.
+func serverDeny(fields map[string]any) bool {
+	for _, key := range []string{"disabledTools", "deniedTools", "alwaysDeny", "deny"} {
+		if list, ok := fields[key].([]any); ok && len(list) > 0 {
 			return true
 		}
 	}
-	if perms, ok := obj["permissions"].(map[string]any); ok {
-		if _, ok := perms["deny"]; ok {
+	return false
+}
+
+func permissionsDeny(root map[string]any) []string {
+	perms, _ := root["permissions"].(map[string]any)
+	list, _ := perms["deny"].([]any)
+	var out []string
+	for _, item := range list {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// denied reports a permissions.deny entry for this server: mcp__<server> or mcp__<server>__<tool>.
+// A longer server name that merely starts with this one does not match.
+func denied(entries []string, server string) bool {
+	prefix := "mcp__" + server
+	for _, entry := range entries {
+		if entry == prefix || strings.HasPrefix(entry, prefix+"__") {
 			return true
 		}
 	}

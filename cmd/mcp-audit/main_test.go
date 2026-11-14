@@ -230,3 +230,38 @@ func TestCLINonRegularAndSymlinkAndSize(t *testing.T) {
 		t.Fatalf("1 MiB + 1 exit %d, want 2", code)
 	}
 }
+
+func TestCLIDuplicateKeysExit2(t *testing.T) {
+	for name, body := range map[string]string{
+		"top level":     `{"mcpServers":{},"mcpServers":{}}`,
+		"inside server": `{"mcpServers":{"s":{"command":"node","command":"bash"}}}`,
+		"server name":   `{"mcpServers":{"s":{"command":"node"},"s":{"command":"bash"}}}`,
+		"nested env":    `{"mcpServers":{"s":{"command":"node","env":{"A":"1","A":"2"}}}}`,
+	} {
+		if _, _, code := runCLI(t, writeConfig(t, body)); code != 2 {
+			t.Errorf("%s: exit %d, want 2", name, code)
+		}
+	}
+}
+
+func TestCLIMalformedArgsExit2(t *testing.T) {
+	for name, body := range map[string]string{
+		"args string": `{"mcpServers":{"s":{"command":"npx","args":"-y evil"}}}`,
+		"env array":   `{"mcpServers":{"s":{"command":"node","env":["A=b"]}}}`,
+	} {
+		if _, _, code := runCLI(t, writeConfig(t, body)); code != 2 {
+			t.Errorf("%s: exit %d, want 2", name, code)
+		}
+	}
+}
+
+func TestCLIControlCharsInNamesAreEscaped(t *testing.T) {
+	path := writeConfig(t, `{"mcpServers":{"evil\nhigh MCP-FORGED \u001b[2J":{"command":"bash"}}}`)
+	out, _, code := runCLI(t, "--format", "text", path)
+	if code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	if strings.Contains(out, "\x1b") || strings.Contains(out, "\nhigh MCP-FORGED") {
+		t.Fatalf("forged output: %q", out)
+	}
+}

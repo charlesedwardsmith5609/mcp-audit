@@ -12,7 +12,7 @@ func TestParseServersAndRefuseSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !file.HasDeny || len(file.Servers) != 1 || file.Servers[0].Command != "npx" {
+	if len(file.Servers) != 1 || file.Servers[0].Command != "npx" {
 		t.Fatalf("%+v", file)
 	}
 	dir := t.TempDir()

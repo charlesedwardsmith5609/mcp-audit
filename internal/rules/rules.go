@@ -2,8 +2,6 @@
 package rules
 
 import (
-	"strings"
-
 	"mcp-audit/internal/config"
 )
 
@@ -40,14 +38,6 @@ func Evaluate(file config.File) []Finding {
 			Fix:      "Remove the secret from the config. Pass it from a secret store at runtime.",
 		})
 	}
-	if len(file.Servers) > 0 && !file.HasDeny {
-		out = append(out, Finding{
-			ID:       "MCP-NO-DENY",
-			Severity: "medium",
-			File:     file.Path,
-			Fix:      "Add a deny list (deny, disabledTools, or alwaysDeny) for tools this server must not call.",
-		})
-	}
 	for _, server := range file.Servers {
 		out = append(out, serverFindings(file.Path, server)...)
 	}
@@ -56,119 +46,37 @@ func Evaluate(file config.File) []Finding {
 
 func serverFindings(file string, server config.Server) []Finding {
 	var out []Finding
-	if unpinned(server) {
+	name := config.Redact(server.Name)
+	spec := resolve(server)
+	if !server.HasDeny {
 		out = append(out, Finding{
-			ID: "MCP-UNPINNED-PACKAGE", Severity: "high", File: file, Server: server.Name,
-			Fix: "Pin the npx or uvx package to a version.",
+			ID: "MCP-NO-DENY", Severity: "medium", File: file, Server: name,
+			Fix: "Add a non-empty deny list for this server: disabledTools or deniedTools on it, or a permissions.deny entry starting mcp__<server>.",
 		})
 	}
-	if broadRoot(server.Args) {
+	if unpinned(spec) {
 		out = append(out, Finding{
-			ID: "MCP-BROAD-ROOT", Severity: "medium", File: file, Server: server.Name,
+			ID: "MCP-UNPINNED-PACKAGE", Severity: "high", File: file, Server: name,
+			Fix: "Pin the npx or uvx package to an exact version (name@1.2.3 or name==1.2.3).",
+		})
+	}
+	if broadRoot(spec.args) {
+		out = append(out, Finding{
+			ID: "MCP-BROAD-ROOT", Severity: "medium", File: file, Server: name,
 			Fix: "Point the filesystem server at the task directory, not / or the home directory.",
 		})
 	}
-	if strings.HasPrefix(strings.ToLower(server.URL), "http://") {
+	if plainHTTP(server.URLs, spec.args) {
 		out = append(out, Finding{
-			ID: "MCP-PLAIN-HTTP", Severity: "high", File: file, Server: server.Name,
-			Fix: "Use https for the remote server, or a local stdio command.",
+			ID: "MCP-PLAIN-HTTP", Severity: "high", File: file, Server: name,
+			Fix: "Use https or wss for the remote server, or a local stdio command.",
 		})
 	}
-	if shell(server) {
+	if shell(spec) {
 		out = append(out, Finding{
-			ID: "MCP-SHELL", Severity: "high", File: file, Server: server.Name,
-			Fix: "Launch the server binary directly. Do not wrap it in a shell.",
+			ID: "MCP-SHELL", Severity: "high", File: file, Server: name,
+			Fix: "Launch the server binary directly. Do not wrap it in a shell or run inline code.",
 		})
 	}
 	return out
-}
-
-func unpinned(server config.Server) bool {
-	tokens := append([]string{server.Command}, server.Args...)
-	if !usesLauncher(tokens) {
-		return false
-	}
-	for _, token := range tokens {
-		if launcher(token) || strings.HasPrefix(token, "-") {
-			continue
-		}
-		if strings.ContainsAny(token, `/\`) && !strings.HasPrefix(token, "@") {
-			continue
-		}
-		return !pinned(token)
-	}
-	return true
-}
-
-func usesLauncher(tokens []string) bool {
-	for _, token := range tokens {
-		if launcher(token) {
-			return true
-		}
-	}
-	return false
-}
-
-func launcher(token string) bool {
-	base := token
-	if i := strings.LastIndexAny(base, `/\`); i >= 0 {
-		base = base[i+1:]
-	}
-	return base == "npx" || base == "uvx" || base == "npx.cmd"
-}
-
-func pinned(token string) bool {
-	if strings.Contains(token, "==") {
-		parts := strings.SplitN(token, "==", 2)
-		return parts[1] != "" && parts[1] != "latest"
-	}
-	at := strings.LastIndex(token, "@")
-	if at <= 0 || at == len(token)-1 {
-		return false
-	}
-	version := token[at+1:]
-	return version != "latest" && !strings.Contains(version, "/")
-}
-
-func broadRoot(args []string) bool {
-	for i, arg := range args {
-		if isRoot(arg) || isRoot(afterEquals(arg)) {
-			return true
-		}
-		if arg == "--root" || arg == "--allowed-directory" {
-			if i+1 < len(args) && isRoot(args[i+1]) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func afterEquals(arg string) string {
-	_, value, ok := strings.Cut(arg, "=")
-	if !ok {
-		return ""
-	}
-	return value
-}
-
-func isRoot(value string) bool {
-	switch value {
-	case "/", "~", "$HOME", "~/":
-		return true
-	default:
-		return false
-	}
-}
-
-func shell(server config.Server) bool {
-	base := server.Command
-	if i := strings.LastIndexAny(base, `/\`); i >= 0 {
-		base = base[i+1:]
-	}
-	switch base {
-	case "sh", "bash", "zsh", "pwsh", "powershell", "cmd", "cmd.exe":
-		return true
-	}
-	return false
 }
