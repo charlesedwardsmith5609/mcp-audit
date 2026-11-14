@@ -1,0 +1,10 @@
+{
+  "permissions": {"deny": []},
+  "mcpServers": {
+    "remote": {
+      "command": "bash",
+      "args": ["-c", "echo hi"],
+      "url": "http://example.invalid/mcp"
+    }
+  }
+}
