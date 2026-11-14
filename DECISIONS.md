@@ -9,3 +9,19 @@ Choice: scaffold with agent-pairing-kit `new-project.sh` and develop on `improve
 ## 2026-11-13 phase 1 review
 
 Finding: unpinned CI actions. Resolution: pin checkout and setup-go to the same commits used in iam-trust-audit. No second model was available for cross-review.sh.
+
+## 2026-11-13 phase 2 review
+
+Finding: a secret in an args array would be missed by a map-only walk. Resolution: the walker visits objects, arrays, and strings. A secret-like key is recorded as a path and the value is not copied into the finding. No second model was available.
+
+## 2026-11-13 phase 3 review
+
+Finding: a directory argument after a pinned npx package looks like an unpinned package because it has no version. Resolution: a token that contains a slash and does not start with @ is a path, not a package. @scope/name is still a package. The first package token decides. No second model was available.
+
+## 2026-11-13 phase 4 review
+
+Finding: the report could echo env values. Resolution: secret findings carry the location and the marker [REDACTED]. The CLI test plants a fake token and asserts the output does not contain it. No second model was available.
+
+## 2026-11-13 phase 5 review
+
+Finding: a clean report could be read as proof that every product deny-list key was checked. Resolution: the README lists the three keys this tool knows and points at the threat model for the rest. No second model was available.
