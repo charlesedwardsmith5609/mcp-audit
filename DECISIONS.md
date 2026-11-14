@@ -24,4 +24,8 @@ Finding: the report could echo env values. Resolution: secret findings carry the
 
 ## 2026-11-13 phase 5 review
 
-Finding: a clean report could be read as proof that every product deny-list key was checked. Resolution: the README lists the three keys this tool knows and points at the threat model for the rest. No second model was available.
+Finding: a clean report could be read as proof that every product deny-list key was checked. Resolution: the README lists the keys this tool knows and points at the threat model for the rest. Updated 2026-11-14: the list is now `disabledTools`, `deniedTools`, `alwaysDeny`, `deny` and `permissions.deny`, checked per server. No second model was available.
+
+## 2026-11-14: unknown shapes fail, deny lists per server, docs match code
+
+Finding: a file in a layout the tool did not know produced no findings and exit 0. Resolution: it yields high `MCP-UNKNOWN-SHAPE` and exit 1. Deny lists are decided per server, so a deny list on one server no longer clears the others. Docs now describe only what the code enforces, including that a symlinked parent directory is followed and that `localhost` `http://` URLs are still flagged.

@@ -8,11 +8,11 @@ Config files often hold tokens in `env` or args. The report may name the key and
 
 ## Rules that are file claims
 
-An unpinned `npx` or `uvx` package can change on the next launch. A shell command can run whatever the args say. `http://` is not TLS. A root of `/` or a home directory lets a filesystem server read more than the task.
+An unpinned `npx` or `uvx` package can change on the next launch. A shell command can run whatever the args say. `http://` is not TLS. `http://` and `ws://` are flagged for every host, including `localhost`. A root of `/`, a drive root or a home directory lets a filesystem server read more than the task. Inline code (`node -e`, `python -c`) is flagged like a shell.
 
 ## Needs verification
 
-Product-specific deny-list keys other than the ones listed in the README are not detected. A Cursor or Claude build that uses a different key will look like it has no deny list. Confirm the key in the settings file you actually use before treating a clean report as a complete allow/deny review.
+Product-specific deny-list keys other than the ones listed under Deny lists in the README (`disabledTools`, `deniedTools`, `alwaysDeny`, `deny`, and `permissions.deny` entries for `mcp__<server>`) are not detected. A Cursor or Claude build that uses a different key will look like it has no deny list. Confirm the key in the settings file you actually use before treating a clean report as a complete allow/deny review.
 
 A file with a shape this tool does not know is reported as `MCP-UNKNOWN-SHAPE` (high, exit 1), never as clean. A new product layout therefore fails loudly until support is added.
 
