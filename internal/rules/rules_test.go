@@ -19,6 +19,7 @@ func TestFixtures(t *testing.T) {
 		{"pass.json", nil, nil},
 		{"unpinned.json", []string{"MCP-UNPINNED-PACKAGE", "MCP-BROAD-ROOT", "MCP-NO-DENY"}, nil},
 		{"secret.json", []string{"MCP-SECRET"}, []string{"ghp_EXAMPLEEXAMPLEEXAMPLEEX", "super-secret-value"}},
+		{"unknown-shape.json", []string{"MCP-UNKNOWN-SHAPE"}, nil},
 		{"http-shell.json", []string{"MCP-PLAIN-HTTP", "MCP-SHELL"}, nil},
 	}
 	for _, tc := range cases {

@@ -21,6 +21,15 @@ type Finding struct {
 // Evaluate returns findings for one file.
 func Evaluate(file config.File) []Finding {
 	var out []Finding
+	if file.Unknown {
+		out = append(out, Finding{
+			ID:       "MCP-UNKNOWN-SHAPE",
+			Severity: "high",
+			File:     file.Path,
+			Detail:   file.Reason,
+			Fix:      "Audit cannot read this file. Point it at a config with mcpServers, servers, context_servers, or projects.*.mcpServers.",
+		})
+	}
 	for _, site := range file.SecretAt {
 		out = append(out, Finding{
 			ID:       "MCP-SECRET",
