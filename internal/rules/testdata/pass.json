@@ -1,5 +1,5 @@
 {
-  "permissions": {"deny": ["rm"]},
+  "permissions": {"deny": ["mcp__fs", "mcp__py__delete"]},
   "mcpServers": {
     "fs": {
       "command": "npx",

@@ -1,5 +1,5 @@
 {
-  "permissions": {"deny": []},
+  "permissions": {"deny": ["mcp__remote"]},
   "mcpServers": {
     "remote": {
       "command": "bash",
